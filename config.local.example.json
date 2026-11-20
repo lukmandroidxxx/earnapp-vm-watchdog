@@ -1,0 +1,19 @@
+{
+  "earnapp_exe": "",
+  "process_names": ["earnapp"],
+  "off_seconds": 60,
+  "settle_seconds": 60,
+  "check_interval_seconds": 60,
+  "max_restarts_per_hour": 30,
+  "manage_service": true,
+  "service_match": "earnapp",
+  "stale_log_seconds": 1800,
+  "restart_when_paused": false,
+  "restart_when_unknown": false,
+  "restart_when_hang": true,
+  "window_probe_seconds": 12,
+  "blocked_texts": [],
+  "paused_texts": [],
+  "telegram_token": "",
+  "telegram_chat_id": ""
+}
