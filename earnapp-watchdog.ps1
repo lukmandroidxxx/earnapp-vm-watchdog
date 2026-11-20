@@ -8,8 +8,10 @@
       1. Cek status device EarnApp lewat API akun (field "banned").
       2. Kalau HIJAU  -> pastikan EarnApp tetap jalan.
       3. Kalau BLOCKED -> matikan EarnApp (+ service earnapp bila ada),
-         tunggu "off_seconds" (default 60 detik), nyalakan lagi,
-         tunggu "settle_seconds", lalu cek lagi. Diulang sampai hijau.
+         bersihkan cache lokalnya, tunggu "off_seconds" (default 300 detik),
+         nyalakan lagi, tunggu "settle_seconds" (default 180 detik),
+         lalu cek lagi. Diulang sampai hijau.
+         Jeda sengaja dipanjangkan supaya server sempat mencatat IP baru.
 
     Mode uji:
       -CheckOnly   : cetak status device lalu keluar (tidak menyentuh EarnApp).
@@ -75,10 +77,11 @@ function Get-DefaultConfig {
         device_uuid             = ""
         device_title            = ""
         earnapp_exe             = ""
-        off_seconds             = 60
-        settle_seconds          = 60
-        check_interval_seconds  = 60
-        max_restarts_per_hour   = 30
+        off_seconds             = 300
+        settle_seconds          = 180
+        check_interval_seconds  = 120
+        max_restarts_per_hour   = 6
+        clear_cache_on_restart  = $true
         manage_service          = $true
         service_match           = "earnapp"
         api_timeout_seconds     = 30
@@ -490,10 +493,43 @@ function Stop-EarnApp {
             Write-Log "Gagal stop proses PID $($p.Id): $($_.Exception.Message)" "WARN"
         }
     }
-    return $stoppedServices
+    return 
 }
 
+function Clear-EarnAppCache {
+    param($Config)
+    $enabled = $true
+    if ($Config -and $Config.Contains("clear_cache_on_restart")) {
+        $enabled = [bool]$Config["clear_cache_on_restart"]
+    }
+    if (-not $enabled) { return }
+    $roots = @(
+        (Join-Path $env:APPDATA "EarnApp"),
+        (Join-Path $env:LOCALAPPDATA "EarnApp"),
+        (Join-Path $env:ProgramData "EarnApp")
+    )
+    $removed = 0
+    foreach ($root in $roots) {
+        if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
+        $logDir = Join-Path $root "logs"
+        if (Test-Path -LiteralPath $logDir) {
+            foreach ($pat in @("*.log", "*.log.old", "*.dmp", "*.tmp")) {
+                foreach ($f in @(Get-ChildItem -LiteralPath $logDir -Filter $pat -File -ErrorAction SilentlyContinue)) {
+                    try { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop; $removed++ } catch { }
+                }
+            }
+        }
+        foreach ($name in @("Cache", "Code Cache", "GPUCache", "Local Storage", "Session Storage", "IndexedDB", "temp", "tmp")) {
+            $p = Join-Path $root $name
+            if (Test-Path -LiteralPath $p) {
+                try { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop; $removed++ } catch { }
+            }
+        }
+    }
+    Write-Log "Cache EarnApp dibersihkan ($removed item)."
+}
 function Start-EarnApp {
+
     param($Config, [string]$Exe, $StoppedServices)
     foreach ($name in @($StoppedServices)) {
         try {
@@ -642,17 +678,18 @@ function Invoke-Cycle {
         $services = Get-EarnAppServices $Config
         $procs = Get-EarnAppProcesses
         $stopped = Stop-EarnApp $Config $services $procs
+        Clear-EarnAppCache $Config
 
         $script:restartCount++
         $off = [int]$Config["off_seconds"]
-        if ($off -lt 1) { $off = 60 }
+        if ($off -lt 1) { $off = 300 }
         Write-Log "Menunggu $off detik sebelum menyalakan lagi..."
         Start-Sleep -Seconds $off
 
         Start-EarnApp $Config $state.Exe $stopped
 
         $settle = [int]$Config["settle_seconds"]
-        if ($settle -lt 1) { $settle = 60 }
+        if ($settle -lt 1) { $settle = 180 }
         Write-Log "Menunggu $settle detik supaya status terbarui..."
         Start-Sleep -Seconds $settle
         $script:justRestarted = $true

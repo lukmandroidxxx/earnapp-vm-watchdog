@@ -72,7 +72,7 @@ mode lokal tidak memerlukannya.
 
 ## Cara kerja singkat
 
-1. Setiap `check_interval_seconds` (default 60 detik) watchdog memanggil API:
+1. Setiap `check_interval_seconds` (default 120 detik) watchdog memanggil API:
    `GET https://earnapp.com/dashboard/api/devices?appid=earnapp&version=1.689.920`
    memakai cookie di `cookie.json`.
 2. Device dicari dengan urutan: `device_uuid` -> `device_title` /
@@ -80,15 +80,44 @@ mode lokal tidak memerlukannya.
 3. Kalau field `banned` **tidak null** -> dianggap **BLOCKED**:
    - service yang namanya mengandung `earnapp` dihentikan,
    - proses `earnapp*.exe` dihentikan,
-   - tunggu `off_seconds` (60 detik),
+   - **bersihkan cache lokal EarnApp**, tunggu `off_seconds` (300 detik),
    - service + `earnapp.exe` dinyalakan lagi,
-   - tunggu `settle_seconds` (60 detik), lalu cek lagi.
+   - tunggu `settle_seconds` (180 detik), lalu cek lagi.
 4. Kalau `banned` **null** -> **HIJAU**: EarnApp dipastikan jalan, tidak diganggu.
 5. Kalau status tidak bisa dipastikan (cookie mati / jaringan putus), watchdog
    **tidak** mematikan EarnApp; hanya mencatat peringatan di log.
 
-Batas pengaman: maksimal `max_restarts_per_hour` restart per jam (default 30).
+Batas pengaman: maksimal `max_restarts_per_hour` restart per jam (default 6).
 Kalau batas tercapai, watchdog menunggu 10 menit sebelum mencoba lagi.
+
+### Cache EarnApp & jeda restart
+
+Setiap kali device BLOCKED, watchdog sekarang:
+
+1. menghentikan service + proses EarnApp,
+2. menghapus **log, dump, dan folder cache** EarnApp
+   (`%APPDATA%\EarnApp\logs`, `Cache`, `Code Cache`, `GPUCache`,
+   `Local Storage`, `Session Storage`, `IndexedDB`, `temp`),
+3. menunggu 300 detik, menyalakan lagi, lalu menunggu 180 detik sebelum cek.
+
+Jeda sengaja dipanjangkan supaya status/IP baru sempat dicatat server
+(terutama kalau IP sudah diganti lewat aplikasi proxy).
+
+**Yang TIDAK dihapus:** `earnapp.settings`, `email`, `user_id`, dan file
+identitas/UUID device. Jadi login dan device tidak hilang. Setelah restart,
+EarnApp akan menulis ulang `earnapp.settings` otomatis.
+
+Untuk VM yang sudah terpasang versi lama, update config-nya:
+
+```powershell
+$j = Get-Content C:\EarnAppWatchdog\config.json -Raw | ConvertFrom-Json
+$j.off_seconds = 300; $j.settle_seconds = 180
+$j.check_interval_seconds = 120; $j.max_restarts_per_hour = 6
+$j.clear_cache_on_restart = $true
+$j | ConvertTo-Json | Set-Content C:\EarnAppWatchdog\config.json -Encoding UTF8
+Stop-ScheduledTask -TaskName EarnAppWatchdog
+Start-ScheduledTask -TaskName EarnAppWatchdog
+```
 
 ---
 
@@ -170,10 +199,11 @@ Contoh output:
 | `device_uuid` | `""` | UUID device (`sdk-win-...`). Paling akurat kalau diisi. |
 | `device_title` | `""` | Judul device di dashboard, mis. `sdk-win-20`. |
 | `earnapp_exe` | `""` | Path `earnapp.exe`. Kosong = cari otomatis (registry + Program Files). |
-| `off_seconds` | `60` | Lama EarnApp dimatikan sebelum dinyalakan lagi. |
-| `settle_seconds` | `60` | Jeda setelah dinyalakan sebelum cek status lagi. |
-| `check_interval_seconds` | `60` | Jeda antar pengecekan saat hijau. |
-| `max_restarts_per_hour` | `30` | Batas restart per jam. `0` = tanpa batas. |
+| `off_seconds` | `300` | Lama EarnApp dimatikan sebelum dinyalakan lagi. |
+| `settle_seconds` | `180` | Jeda setelah dinyalakan sebelum cek status lagi. |
+| `check_interval_seconds` | `120` | Jeda antar pengecekan saat hijau. |
+| `max_restarts_per_hour` | `6` | Batas restart per jam. `0` = tanpa batas. |
+| `clear_cache_on_restart` | `true` | Bersihkan log/dump/cache EarnApp tiap kali restart. |
 | `manage_service` | `true` | Ikut menghentikan/menyalakan service yang mengandung `earnapp`. |
 | `service_match` | `earnapp` | Kata kunci nama service (termasuk `luminati_net_updater_win_earnapp_com`). |
 | `api_timeout_seconds` | `30` | Timeout request API. |
@@ -368,7 +398,7 @@ lain, tambahkan teksnya di `blocked_texts` pada `config.json`.
    Membaca saja: tidak klik, tidak screenshot, tidak mengubah jendela.
 3. Cocokkan teks dengan daftar penanda blocked (Inggris, Indonesia, dan
    beberapa bahasa lain). Teks panjang (FAQ) dan "not blocked" diabaikan.
-4. Kalau blocked: stop EarnApp + service, tunggu `off_seconds` (60 dtk),
+4. Kalau blocked: stop EarnApp + service, bersihkan cache, tunggu `off_seconds` (300 dtk),
    start lagi, tunggu `settle_seconds`, ulangi sampai tanda blocked hilang.
 5. Kalau EarnApp mati: dinyalakan. Kalau hang: restart.
 
@@ -410,10 +440,11 @@ Yang dibuat:
 |---|---|---|
 | `earnapp_exe` | `""` | Path `earnapp.exe`; kosong = dicari otomatis |
 | `process_names` | `["earnapp"]` | Nama proses yang dianggap EarnApp |
-| `off_seconds` | `60` | Lama EarnApp dimatikan sebelum dinyalakan lagi |
-| `settle_seconds` | `60` | Jeda setelah start sebelum cek lagi |
-| `check_interval_seconds` | `60` | Jeda antar siklus |
-| `max_restarts_per_hour` | `30` | Batas restart; kalau tercapai, tunggu 10 menit |
+| `off_seconds` | `300` | Lama EarnApp dimatikan sebelum dinyalakan lagi |
+| `settle_seconds` | `180` | Jeda setelah start sebelum cek lagi |
+| `check_interval_seconds` | `120` | Jeda antar siklus |
+| `max_restarts_per_hour` | `6` | Batas restart; kalau tercapai, tunggu 10 menit |
+| `clear_cache_on_restart` | `true` | Bersihkan log/dump/cache EarnApp tiap restart |
 | `manage_service` | `true` | Ikut stop/start service `luminati_net_updater_win_earnapp_com` |
 | `stale_log_seconds` | `1800` | Log lebih tua dari ini + jendela tak terbaca = hang |
 | `restart_when_paused` | `false` | Restart kalau status paused (default: biarkan) |
