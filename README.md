@@ -18,9 +18,12 @@ Tombol darurat sudah di-upload supaya gampang diambil dari VM:
 
 | Link | Isi |
 |---|---|
-| **https://s.id/yELnc** | `stop-emergency.ps1` (versi universal: API + lokal) |
-| https://s.id/9HCFq | mirror link yang sama (cadangan) |
-| https://gist.github.com/lukmandroidxxx/19f8e7817677fd672d9049bdf0525d25 | semua file + tombol **Download ZIP** di GitHub |
+| **https://s.id/3IDGf** | **PAKET LENGKAP .zip** — installer + watchdog + uninstaller + contoh config |
+| **https://s.id/yELnc** | `stop-emergency.ps1` saja (versi universal: API + lokal) |
+| https://s.id/9HCFq | mirror emergency script (cadangan) |
+| https://github.com/lukmandroidxxx/earnapp-vm-watchdog/archive/refs/heads/main.zip | URL langsung ZIP paket lengkap |
+| https://github.com/lukmandroidxxx/earnapp-vm-watchdog | repo public berisi semua file |
+| https://gist.github.com/lukmandroidxxx/19f8e7817677fd672d9049bdf0525d25 | Gist emergency script + **Download ZIP** |
 
 Kedua file emergency sekarang **identik** dan otomatis mendeteksi mode:
 kalau task/folder `EarnAppWatchdogLocal` ada -> mode **lokal**, kalau
@@ -35,6 +38,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\stop-emergency.ps1 -Statu
 
 Atau lewat browser: buka `https://s.id/yELnc`, **Save as**
 `stop-emergency.ps1`, lalu jalankan PowerShell sebagai Administrator.
+
+Pasang watchdog dari paket lengkap (PowerShell, PowerShell sebagai Administrator):
+
+```powershell
+iwr https://s.id/3IDGf -MaximumRedirection 5 -OutFile "$env:TEMP\vm-watchdog.zip"
+Expand-Archive "$env:TEMP\vm-watchdog.zip" "$env:TEMP\vm-watchdog" -Force
+cd "$env:TEMP\vm-watchdog\earnapp-vm-watchdog-main"
+.\install.ps1                       # mode API (butuh cookie.json)
+# atau: .\install-local.ps1         # mode lokal (tanpa cookie)
+```
+
+`cookie.json` sengaja **tidak ikut** di paket. Isi sendiri di VM untuk mode API;
+mode lokal tidak memerlukannya.
 
 ---
 
